@@ -86,8 +86,14 @@ public class BlockPropertyIdProvider implements TypeProvider<IProperty<?>, Strin
             Class<?> blockClass = block.getClass();
             while (true) {
                 if (blockClass == Object.class) {
-                    final String propertyId = modId + ":" + originalClass + "_" + property.getName();
-                    LogManager.getLogger("Sponge").warn("Could not find {} owning class, assigning fallback id: {}", property.getName(),
+                    // No field holds it: normal for mods that build their properties per block (Railcraft), so not worth a
+                    // warning. Named after the block, which is unique, rather than its class, which several blocks may share
+                    // (each of those used to get the same id, so looking the id up found only the last of them).
+                    String propertyId = lastAttemptId;
+                    for (int i = 2; instance.idPropertyMap.containsKey(propertyId.toLowerCase(Locale.ENGLISH)); i++) {
+                        propertyId = lastAttemptId + "_" + i;
+                    }
+                    LogManager.getLogger("Sponge").debug("Could not find {} owning class, assigning fallback id: {}", property.getName(),
                             propertyId);
                     instance.register(property, propertyId);
                     return propertyId;

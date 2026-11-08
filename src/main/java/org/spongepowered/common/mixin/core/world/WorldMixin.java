@@ -268,7 +268,10 @@ public abstract class WorldMixin implements WorldBridge {
             }
 
             // Sponge start - fire event
-            if (!entityCollisions.isEmpty()) {
+            if (this.bridge$isFake()) {
+                // Client worlds (SpongeForge on a client): no event, and firing one off the server thread throws in single-player
+                list.addAll(entityCollisions.values());
+            } else if (!entityCollisions.isEmpty()) {
                 final List<Entity> collidedEntities = new ArrayList<>(entityCollisions.keySet());
                 final CollideEntityEvent event = SpongeCommonEventFactory.callCollideEntityEvent((World) (Object) this, entityIn, collidedEntities);
                 if (event != null && !event.isCancelled()) {
@@ -664,7 +667,9 @@ public abstract class WorldMixin implements WorldBridge {
         // Sponge - Don't create or obtain pending tileentity async, simply check if TE exists in chunk
         // Mods such as pixelmon call this method async, so this is a temporary workaround until fixed
         if (!this.bridge$isFake() && !SpongeImpl.getServer().isCallingFromMinecraftThread()) {
-            cir.setReturnValue(this.getChunk(pos).getTileEntity(pos, Chunk.EnumCreateEntityType.CHECK));
+            // Only from a chunk that's already loaded: loading one off the server thread is never safe
+            final Chunk chunk = ((ChunkProviderBridge) this.shadow$getChunkProvider()).bridge$getLoadedChunkWithoutMarkingActive(pos.getX() >> 4, pos.getZ() >> 4);
+            cir.setReturnValue(chunk == null || chunk.isEmpty() ? null : chunk.getTileEntity(pos, Chunk.EnumCreateEntityType.CHECK));
             return;
         }
         if (this.isTileMarkedForRemoval(pos) && !this.bridge$isFake()) {

@@ -56,7 +56,7 @@ public abstract class BlockNoteMixin extends BlockMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/world/World;playSound(Lnet/minecraft/entity/player/EntityPlayer;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/SoundEvent;Lnet/minecraft/util/SoundCategory;FF)V"),
             cancellable = true)
     private void impl$throwNoteBlockSoundEvent(IBlockState state, World worldIn, BlockPos pos, int id, int param, CallbackInfoReturnable<Boolean> callbackInfo) {
-        if (!ShouldFire.PLAY_SOUND_EVENT_NOTE_BLOCK) {
+        if (!ShouldFire.PLAY_SOUND_EVENT_NOTE_BLOCK || worldIn.isRemote) {
             return;
         }
 

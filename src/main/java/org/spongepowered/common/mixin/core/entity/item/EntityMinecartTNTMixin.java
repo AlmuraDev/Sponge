@@ -100,6 +100,9 @@ public abstract class EntityMinecartTNTMixin extends EntityMinecartMixin impleme
 
     @Inject(method = "attackEntityFrom(Lnet/minecraft/util/DamageSource;F)Z", at = @At("INVOKE"))
     private void onAttack(final DamageSource damageSource, final float amount, final CallbackInfoReturnable<Boolean> ci) {
+        if (this.world.isRemote) {
+            return;
+        }
         this.impl$primeCause = damageSource;
     }
 
@@ -124,6 +127,10 @@ public abstract class EntityMinecartTNTMixin extends EntityMinecartMixin impleme
     @Inject(method = "ignite", at = @At("RETURN"))
     private void postSpongeIgnite(final CallbackInfo ci) {
         bridge$setFuseTicksRemaining(this.impl$fuseDuration);
+        if (this.world.isRemote) {
+            // The cause stack is the server's: using it from the client thread throws in single-player
+            return;
+        }
         if (this.impl$primeCause != null) {
             Sponge.getCauseStackManager().pushCause(this.impl$primeCause);
         }
@@ -160,6 +167,9 @@ public abstract class EntityMinecartTNTMixin extends EntityMinecartMixin impleme
 
     @Inject(method = "attackEntityFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/item/EntityMinecartTNT;explodeCart(D)V"))
     private void onAttackEntityFrom(final DamageSource source, final float amount, final CallbackInfoReturnable<Boolean> cir) {
+        if (this.world.isRemote) {
+            return;
+        }
         try (final CauseStackManager.StackFrame frame = Sponge.getCauseStackManager().pushCauseFrame()) {
             frame.pushCause(source);
             final AttackEntityEvent event = SpongeEventFactory.createAttackEntityEvent(frame.getCurrentCause(), new ArrayList<>(),

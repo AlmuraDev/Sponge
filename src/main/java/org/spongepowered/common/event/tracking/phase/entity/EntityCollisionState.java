@@ -29,7 +29,6 @@ import org.spongepowered.api.entity.Entity;
 import org.spongepowered.api.event.cause.EventContextKeys;
 import org.spongepowered.api.event.cause.entity.spawn.SpawnTypes;
 import org.spongepowered.common.event.SpongeCommonEventFactory;
-import org.spongepowered.common.event.tracking.TrackingUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +56,7 @@ public final class EntityCollisionState extends EntityPhaseState<BasicEntityCont
                 Sponge.getCauseStackManager().addContext(EventContextKeys.SPAWN_TYPE, SpawnTypes.PASSIVE);
                 SpongeCommonEventFactory.callDropItemCustom(entities, context);
             });
-        TrackingUtil.processBlockCaptures(context);
+        // No block captures here: this context only captures entities, and asking for its blocks threw on every unwind
         context.getCapturedEntitySupplier()
                 .acceptAndClearIfNotEmpty(mc -> {
                     final List<Entity> entities = new ArrayList<>(mc);

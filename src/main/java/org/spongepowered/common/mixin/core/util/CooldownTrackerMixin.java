@@ -78,7 +78,8 @@ public abstract class CooldownTrackerMixin implements CooldownTrackerBridge {
     }
 
     protected int impl$throwSetCooldownEvent(final ItemType type, final int ticks) {
-        return 0;
+        // Only the server tracker fires the event; the client's must keep the cooldown it was given, or it never shows
+        return ticks;
     }
 
     protected void impl$throwEndCooldownEvent(final ItemType type) {
