@@ -24,6 +24,15 @@
  */
 package org.spongepowered.neoforge.hook;
 
+import java.util.Objects;
+import java.util.Map;
+import java.util.HashMap;
+import org.spongepowered.plugin.PluginContainer;
+import org.spongepowered.neoforge.launch.plugin.NeoPluginContainer;
+import org.checkerframework.checker.nullness.qual.Nullable;
+import net.neoforged.fml.loading.moddiscovery.ModFile;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.ModContainer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.status.ServerStatus;
 import org.spongepowered.common.hooks.GeneralHooks;
@@ -31,6 +40,53 @@ import org.spongepowered.common.hooks.GeneralHooks;
 import java.util.Optional;
 
 public class NeoGeneralHooks implements GeneralHooks {
+
+    private static final StackWalker STACK_WALKER = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
+    private static final String SPONGE_MODULE = "spongeneo";
+
+    // module name -> mod; built once mods are loaded
+    private volatile @Nullable Map<String, ModContainer> modsByModule;
+
+    /**
+     * Mods register Brigadier commands from {@code RegisterCommandsEvent} with no plugin in the cause, so their
+     * commands were owned by "unknown". The first class on the stack outside SpongeNeo that lives in a mod's module is
+     * the registering mod.
+     */
+    @Override
+    public Optional<PluginContainer> findCallingPlugin() {
+        final Map<String, ModContainer> mods = this.modsByModule();
+        if (mods.isEmpty()) {
+            return Optional.empty();
+        }
+        return NeoGeneralHooks.STACK_WALKER.walk(frames -> frames
+                .map(frame -> frame.getDeclaringClass().getModule().getName())
+                .filter(name -> name != null && !NeoGeneralHooks.SPONGE_MODULE.equals(name))
+                .map(mods::get)
+                .filter(Objects::nonNull)
+                .findFirst())
+            .flatMap(NeoPluginContainer::of);
+    }
+
+    private Map<String, ModContainer> modsByModule() {
+        @Nullable Map<String, ModContainer> mods = this.modsByModule;
+        if (mods == null) {
+            final @Nullable ModList modList = ModList.get();
+            if (modList == null) {
+                return Map.of();
+            }
+            final Map<String, ModContainer> built = new HashMap<>();
+            modList.forEachModContainer((id, container) -> {
+                if (container.getModInfo().getOwningFile().getFile() instanceof final ModFile file
+                        && file.getModuleDescriptor() != null) {
+                    // A file can hold several mods; its first one owns the module
+                    built.putIfAbsent(file.getModuleDescriptor().name(), container);
+                }
+            });
+            mods = Map.copyOf(built);
+            this.modsByModule = mods;
+        }
+        return mods;
+    }
 
     public ServerStatus createServerStatus(ServerStatus originalStatus, Component description, Optional<ServerStatus.Players> players, Optional<ServerStatus.Version> version, Optional<ServerStatus.Favicon> favicon) {
         return new ServerStatus(description, players, version, favicon, originalStatus.enforcesSecureChat(), originalStatus.isModded());

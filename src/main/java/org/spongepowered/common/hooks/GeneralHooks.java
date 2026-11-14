@@ -24,6 +24,7 @@
  */
 package org.spongepowered.common.hooks;
 
+import org.spongepowered.plugin.PluginContainer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.status.ServerStatus;
 import org.spongepowered.api.Sponge;
@@ -38,6 +39,14 @@ public interface GeneralHooks {
         // that the game is still being loaded. This is needed to support initialization
         // events with cause tracking.
         return !Sponge.isServerAvailable() || PhaseTracker.getWorldInstance().onSidedThread();
+    }
+
+    /**
+     * Finds the plugin whose code is registering something, for registrations that arrive without a
+     * {@link PluginContainer} in the cause (e.g. mods registering Brigadier commands on a modded platform).
+     */
+    default Optional<PluginContainer> findCallingPlugin() {
+        return Optional.empty();
     }
 
     default ServerStatus createServerStatus(ServerStatus originalStatus, Component description, Optional<ServerStatus.Players> players, Optional<ServerStatus.Version> version, Optional<ServerStatus.Favicon> favicon) {
