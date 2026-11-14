@@ -27,7 +27,6 @@ package org.spongepowered.common.entity.player;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.mojang.authlib.GameProfile;
-import net.minecraft.core.Rotations;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
@@ -237,7 +236,9 @@ public final class SpongeUserData implements Identifiable, DataSerializable, Bed
         compound.read(Constants.Sponge.World.DIMENSION, Identifier.CODEC)
             .ifPresent(key -> this.worldKey = (ResourceKey) (Object) key);
 
-        final var rotation = compound.read(Constants.Entity.ENTITY_ROTATION, Rotations.CODEC).orElse(new Rotations(0, 0, 0));
+        // A player's Rotation is [yaw, pitch], the format writeCompound stores. Rotations.CODEC (armor stand poses)
+        // expects three floats, so every saved player failed to read ("Input is not a list of 3 elements").
+        final var rotation = compound.read(Constants.Entity.ENTITY_ROTATION, Constants.Entity.ROTATIONS_CODEC).orElse(Vector3f.ZERO);
         final var position = compound.read(Constants.Entity.ENTITY_POSITION, Constants.Entity.ENTITY_POSITION_CODEC).orElse(Vector3d.ZERO);
         this.x = position.x();
         this.y = position.y();
