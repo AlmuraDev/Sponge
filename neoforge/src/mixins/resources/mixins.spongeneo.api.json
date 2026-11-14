@@ -4,6 +4,7 @@
     "package": "org.spongepowered.neoforge.mixin.api",
     "priority": 1300,
     "mixins": [
+        "minecraft.server.packs.repository.PackRepositoryMixin_Neo_API"
     ],
     "overwrites": {
         "conformVisibility": true
