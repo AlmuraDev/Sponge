@@ -56,6 +56,7 @@ public final class PlatformHooks {
     private ItemHooks itemHooks = new ItemHooks() {};
     private EntityHooks entityHooks = new EntityHooks() {};
     private ChannelHooks channelHooks = new ChannelHooks() {};
+    private PermissionHooks permissionHooks = new PermissionHooks() {};
 
     public DimensionHooks getDimensionHooks() {
         return this.dimensionHooks;
@@ -119,5 +120,13 @@ public final class PlatformHooks {
 
     public void setChannelHooks(final ChannelHooks channelHooks) {
         this.channelHooks = channelHooks;
+    }
+
+    public PermissionHooks getPermissionHooks() {
+        return this.permissionHooks;
+    }
+
+    public void setPermissionHooks(final PermissionHooks permissionHooks) {
+        this.permissionHooks = Objects.requireNonNull(permissionHooks);
     }
 }

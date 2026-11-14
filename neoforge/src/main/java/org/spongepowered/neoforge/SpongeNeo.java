@@ -24,6 +24,7 @@
  */
 package org.spongepowered.neoforge;
 
+import org.spongepowered.neoforge.hook.NeoPermissionHooks;
 import com.google.inject.Inject;
 import net.minecraft.client.Minecraft;
 import net.neoforged.bus.api.IEventBus;
@@ -72,6 +73,7 @@ public final class SpongeNeo {
         PlatformHooks.INSTANCE.setWorldHooks(new NeoWorldHooks());
         PlatformHooks.INSTANCE.setGeneralHooks(new NeoGeneralHooks());
         PlatformHooks.INSTANCE.setChannelHooks(new NeoChannelHooks());
+        PlatformHooks.INSTANCE.setPermissionHooks(new NeoPermissionHooks());
         PlatformHooks.INSTANCE.setItemHooks(new NeoItemHooks());
     }
 

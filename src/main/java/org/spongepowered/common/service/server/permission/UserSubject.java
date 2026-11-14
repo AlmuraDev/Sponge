@@ -24,6 +24,7 @@
  */
 package org.spongepowered.common.service.server.permission;
 
+import org.spongepowered.common.hooks.PlatformHooks;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.server.permissions.PermissionLevel;
@@ -131,7 +132,11 @@ public class UserSubject extends SpongeSubject {
 
     @Override
     public Tristate permissionValue(final String permission, final Cause cause) {
-        Tristate ret = super.permissionValue(permission, cause);
+        // A platform permission system (e.g. LuckPerms through NeoForge's permission API) has the final say
+        Tristate ret = PlatformHooks.INSTANCE.getPermissionHooks().permissionValue(this.player.id(), permission);
+        if (ret == Tristate.UNDEFINED) {
+            ret = super.permissionValue(permission, cause);
+        }
         if (ret == Tristate.UNDEFINED) {
             ret = this.dataPermissionValue(this.collection.defaults().subjectData(), permission);
         }
@@ -146,7 +151,10 @@ public class UserSubject extends SpongeSubject {
 
     @Override
     public Optional<String> option(final String option, final Cause cause) {
-        Optional<String> ret = super.option(option, cause);
+        Optional<String> ret = PlatformHooks.INSTANCE.getPermissionHooks().option(this.player.id(), option);
+        if (!ret.isPresent()) {
+            ret = super.option(option, cause);
+        }
         if (!ret.isPresent()) {
             ret = this.dataOptionValue(this.collection.defaults().subjectData(), option);
         }
