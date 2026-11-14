@@ -231,19 +231,29 @@ public abstract class SpongeEventManager implements EventManager {
 
         final Class<?> handle = listenerObject.getClass();
 
-        MethodHandles.@Nullable Lookup lookup = customLookup;
-        if (lookup == null) {
-            lookup = ListenerLookups.get(handle);
-            if (lookup == null) {
-                SpongeCommon.logger().warn("No lookup found for listener {}.", handle.getName());
-                return;
-            }
-        }
-
         final AnnotatedEventListener.Factory handlerFactory = new ClassEventListenerFactory(FilterGenerator::create);
 
         try {
             final List<ListenerClassVisitor.DiscoveredMethod> methods = ListenerClassVisitor.getEventListenerMethods(handle);
+            if (methods.isEmpty()) {
+                // Nothing to register. Plugin main classes are always passed here, even when (like SpongeNeo's own
+                // mod class) they have no @Listener methods and so were never given a lookup.
+                return;
+            }
+
+            MethodHandles.@Nullable Lookup lookup = customLookup;
+            if (lookup == null) {
+                lookup = ListenerLookups.get(handle);
+                if (lookup == null) {
+                    // Lookups are only recorded for classes that declare @Listener methods themselves, so a subclass that
+                    // inherits them needs registerListeners(plugin, listener, MethodHandles.lookup())
+                    SpongeCommon.logger().warn("No lookup found for listener {}, so its {} @Listener method(s) were not registered. "
+                            + "Register it with EventManager#registerListeners(PluginContainer, Object, MethodHandles.Lookup).",
+                            handle.getName(), methods.size());
+                    return;
+                }
+            }
+
             for (final ListenerClassVisitor.DiscoveredMethod method : methods) {
                 final Listener listener = method.listener();
                 final @Nullable String error = SpongeEventManager.getHandlerErrorOrNull(method);
