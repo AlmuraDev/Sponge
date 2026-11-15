@@ -398,8 +398,10 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
     public void impl$callInteractBlockPrimaryEvent(final ServerPlayerGameMode playerInteractionManager, final BlockPos pos,
             final ServerboundPlayerActionPacket.Action act, final Direction dir, final int maxBuildHeight, final int sequence) {
         final InteractBlockEvent.@MonotonicNonNull Primary event;
-        // Block destroying can be delayed for lag compensation.
-        if (act != ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK) {
+        // Block destroying can be delayed for lag compensation, so STOP_DESTROY_BLOCK fires no event here. Neither does
+        // CHANGE_DESTROY_DIRECTION (26.x), sent when the player turns to another face of the block being destroyed: it starts
+        // nothing new, so it goes straight to vanilla.
+        if (act == ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK || act == ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK) {
             final ServerLevel level = ((ServerPlayerGameModeAccessor) playerInteractionManager).accessor$level();
             final BlockSnapshot snapshot = ((org.spongepowered.api.world.server.ServerWorld) level)
                 .createSnapshot(VecHelper.toVector3i(pos));
