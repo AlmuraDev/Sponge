@@ -166,11 +166,12 @@ public abstract class RconClientMixin extends GenericThread implements RconClien
                                     // Execute the command on the main thread and wait for it
                                     SpongeCommon.serverScheduler().execute(() -> {
                                         final CauseStackManager causeStackManager = PhaseTracker.getInstance();
-                                        // Only add the RemoteConnection here, the RconSource
-                                        // will be added by the command manager
                                         causeStackManager.pushCause(this);
+                                        // The RCON source is the command's Audience: without it in the cause, CommandCause#audience()
+                                        // fell back to the server console, so plugin command output went to the log, not the RCON client
+                                        causeStackManager.pushCause(this.impl$source);
                                         SpongeCommon.server().getCommands().performPrefixedCommand(this.impl$source.createCommandSourceStack(), command);
-                                        causeStackManager.popCause();
+                                        causeStackManager.popCauses(2);
                                     }).get();
                                     final String logContents = this.impl$source.getCommandResponse();
                                     this.impl$source.prepareForCommand();
