@@ -24,6 +24,10 @@
  */
 package org.spongepowered.common.mixin.api.minecraft.world.level.storage;
 
+import org.spongepowered.api.world.weather.WeatherTypes;
+import net.minecraft.util.RandomSource;
+import net.minecraft.util.valueproviders.IntProvider;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.level.CustomSpawner;
 import net.minecraft.world.level.gamerules.GameRuleMap;
@@ -46,7 +50,6 @@ import org.spongepowered.common.accessor.server.level.ServerLevelAccessor;
 import org.spongepowered.common.accessor.world.entity.npc.wanderingtrader.WanderingTraderSpawnerAccessor;
 import org.spongepowered.common.accessor.world.level.GameRulesAccessor;
 import org.spongepowered.common.bridge.world.level.storage.ServerLevelDataBridge;
-import org.spongepowered.common.util.Constants;
 import org.spongepowered.common.util.SpongeMinecraftDayTime;
 import org.spongepowered.common.util.SpongeTicks;
 
@@ -178,7 +181,15 @@ public interface ServerLevelDataMixin_API extends ServerWorldProperties {
 
     @Override
     default void setWeather(final WeatherType type) {
-        this.offer(Keys.WEATHER, Weather.of(Objects.requireNonNull(type, "type"), 6000 / Constants.TickConversions.TICK_DURATION_MS));
+        Objects.requireNonNull(type, "type");
+        // A random duration, picked like vanilla's /weather: clear 12000-180000 ticks, rain 12000-24000, thunder 3600-15600.
+        // (This was 6000 / TICK_DURATION_MS, i.e. 120 ticks, so clear weather ended after about six seconds.)
+        final IntProvider durations = type == WeatherTypes.CLEAR.get() ? ServerLevel.RAIN_DELAY
+                : type == WeatherTypes.THUNDER.get() ? ServerLevel.THUNDER_DURATION
+                : ServerLevel.RAIN_DURATION;
+        final @Nullable ServerLevel level = ((ServerLevelDataBridge) this).bridge$level();
+        final RandomSource random = level == null ? RandomSource.create() : level.getRandom();
+        this.offer(Keys.WEATHER, Weather.of(type, Ticks.of(durations.sample(random))));
     }
 
     @Override
