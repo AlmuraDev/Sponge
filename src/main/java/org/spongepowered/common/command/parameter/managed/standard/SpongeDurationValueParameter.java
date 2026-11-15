@@ -55,6 +55,14 @@ public final class SpongeDurationValueParameter extends ResourceKeyedArgumentVal
             final @NonNull CommandCause cause, final ArgumentReader.@NonNull Mutable reader) throws ArgumentParseException {
 
         String s = reader.parseString().toUpperCase();
+        // A bare number is seconds ("/weather clear 9999"), as Nucleus and other plugins always took it
+        if (!s.isEmpty() && s.chars().allMatch(Character::isDigit)) {
+            try {
+                return Optional.of(Duration.ofSeconds(Long.parseLong(s)));
+            } catch (final NumberFormatException ex) {
+                throw reader.createException(Component.text("Invalid duration!"));
+            }
+        }
         if (!s.contains("T")) {
             if (s.contains("D")) {
                 if (s.contains("H") || s.contains("M") || s.contains("S")) {
