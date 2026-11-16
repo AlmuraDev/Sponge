@@ -30,7 +30,6 @@ import net.minecraft.util.valueproviders.IntProvider;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.level.CustomSpawner;
-import net.minecraft.world.level.gamerules.GameRuleMap;
 import net.minecraft.world.level.saveddata.WanderingTraderData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -48,7 +47,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.common.SpongeCommon;
 import org.spongepowered.common.accessor.server.level.ServerLevelAccessor;
 import org.spongepowered.common.accessor.world.entity.npc.wanderingtrader.WanderingTraderSpawnerAccessor;
-import org.spongepowered.common.accessor.world.level.GameRulesAccessor;
 import org.spongepowered.common.bridge.world.level.storage.ServerLevelDataBridge;
 import org.spongepowered.common.util.SpongeMinecraftDayTime;
 import org.spongepowered.common.util.SpongeTicks;
@@ -103,12 +101,11 @@ public interface ServerLevelDataMixin_API extends ServerWorldProperties {
 
     @Override
     default Map<GameRule<?>, ?> gameRules() {
-        final GameRuleMap rules = ((GameRulesAccessor) ((ServerLevelDataBridge) this).bridge$level().getGameRules()).accessor$rules();
+        // Every available rule with its effective value: a world's GameRuleMap only stores the rules that were changed,
+        // so listing its keys showed nothing for a new world
+        final net.minecraft.world.level.gamerules.GameRules rules = ((ServerLevelDataBridge) this).bridge$level().getGameRules();
         final Map<GameRule<?>, Object> apiRules = new HashMap<>();
-        for (final var rule : rules.keySet()) {
-            final GameRule<?> key = (GameRule<?>) (Object) rule;
-            apiRules.put(key, rules.get(rule));
-        }
+        rules.availableRules().forEach(rule -> apiRules.put((GameRule<?>) (Object) rule, rules.get(rule)));
         return apiRules;
     }
 

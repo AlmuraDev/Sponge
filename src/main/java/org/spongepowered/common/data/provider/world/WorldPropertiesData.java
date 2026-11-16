@@ -99,7 +99,9 @@ public final class WorldPropertiesData {
                         .get(h -> h.bridge$worldBorder().bridge$asImmutable())
                 .asMutable(PrimaryLevelData.class)
                     .create(Keys.WORLD_DIFFICULTY)
-                        .set((h, v) -> h.setDifficulty((net.minecraft.world.Difficulty) (Object) v))
+                        // As a custom difficulty: MinecraftServer#forceDifficulty (e.g. when a world is created) resets
+                        // every other world to server.properties' difficulty
+                        .set((h, v) -> ((PrimaryLevelDataBridge) h).bridge$forceSetDifficulty((net.minecraft.world.Difficulty) (Object) v))
                 .asMutable(PrimaryLevelDataBridge.class)
                     .create(Keys.WORLD_TYPE)
                         .set((h, v) -> h.bridge$dimensionType((DimensionType) (Object) v, true))
