@@ -24,6 +24,10 @@
  */
 package org.spongepowered.common.mixin.core.server.level;
 
+import org.spongepowered.common.world.server.SpongeWorldManager;
+import org.spongepowered.api.Server;
+import net.minecraft.world.level.storage.PrimaryLevelData;
+import net.minecraft.world.level.GameType;
 import com.llamalad7.mixinextras.injector.v2.WrapWithCondition;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -251,6 +255,19 @@ public abstract class ServerLevelMixin extends LevelMixin implements ServerLevel
         return this.impl$gameRules;
     }
 
+    /**
+     * On a dedicated server the constructor sets the level data's game type to the server default. Vanilla levels share
+     * the server's data, but a Sponge world has its own, so this wiped each world's game mode on every load.
+     */
+    @Redirect(method = "<init>", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/world/level/storage/ServerLevelData;setGameType(Lnet/minecraft/world/level/GameType;)V"))
+    private void impl$keepPerWorldGameType(final ServerLevelData levelData, final GameType gameType, final MinecraftServer server) {
+        if (levelData instanceof PrimaryLevelData && levelData != server.getWorldData().overworldData()) {
+            return;
+        }
+        levelData.setGameType(gameType);
+    }
+
     @Inject(method = "<init>", at = @At("TAIL"))
     private void impl$onInit(
         final MinecraftServer server,
@@ -476,6 +493,11 @@ public abstract class ServerLevelMixin extends LevelMixin implements ServerLevel
 
         if (behavior != SerializationBehavior.NONE) {
             original.call(self, flush);
+            // A Sponge world's own level data (game mode, difficulty, spawn, ...) goes to level.dat in its folder; the
+            // default world's is saved by the server
+            if (levelData instanceof PrimaryLevelData primary && primary != this.server.getWorldData()) {
+                ((SpongeWorldManager) ((Server) this.server).worldManager()).saveLevelData(((ServerWorld) this).key(), primary);
+            }
         }
     }
 

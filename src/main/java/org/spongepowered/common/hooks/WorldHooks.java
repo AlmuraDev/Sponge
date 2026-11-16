@@ -45,6 +45,14 @@ public interface WorldHooks {
 
     default void postLoadWorld(ServerLevel world) { }
 
+    /**
+     * A level stem that generates with the given seed. Vanilla levels all take their seed from the server's world gen
+     * settings, so by default this does nothing; a platform with per-dimension seeds overrides it.
+     */
+    default LevelStem withSeed(final LevelStem stem, final long seed) {
+        return stem;
+    }
+
     default void preUnloadWorld(ServerLevel world) { }
 
     default Registry<LevelStem> earlyRegistryAccess(ResourceKey<Registry<LevelStem>> levelStem) {

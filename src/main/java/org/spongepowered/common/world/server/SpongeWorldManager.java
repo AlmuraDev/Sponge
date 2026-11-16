@@ -309,6 +309,8 @@ public class SpongeWorldManager implements WorldManager {
 
                 ((MinecraftServerAccessor) this.server).invoker$forceDifficulty();
 
+                this.saveLevelData((ResourceKey) (Object) registryKey.identifier(), levelData.data());
+
                 return this.loadSpawnChunksAsync(task, world);
             }, SpongeCommon.server())
             .thenCompose(Function.identity())
@@ -432,7 +434,37 @@ public class SpongeWorldManager implements WorldManager {
 
 
     private void saveLevelDat(final WorldData worldData, final ResourceKey key) {
-        this.serverStorageSource().saveDataTag(worldData);
+        // This wrote the root level.dat whatever world it was given, so cloning, renaming or saving an unloaded world's
+        // properties overwrote the default world's level data
+        this.saveLevelData(key, worldData);
+    }
+
+    /**
+     * Saves a world's level data (game mode, difficulty, spawn, hardcore, ...): the default world's to the root
+     * level.dat, any other world's to level.dat in its own dimension folder, which {@link #loadLevelTag} reads back.
+     * Written as vanilla writes the root one: to a temporary file, then moved in place, keeping level.dat_old.
+     */
+    public void saveLevelData(final ResourceKey key, final WorldData worldData) {
+        final net.minecraft.resources.ResourceKey<Level> registryKey = SpongeWorldManager.createRegistryKey(key);
+        if (Level.OVERWORLD.equals(registryKey)) {
+            this.serverStorageSource().saveDataTag(worldData);
+            return;
+        }
+        final Path dimensionDir = DimensionType.getStorageFolder(registryKey, this.defaultWorldDirectory);
+        try {
+            Files.createDirectories(dimensionDir);
+            final CompoundTag root = new CompoundTag();
+            root.put("Data", worldData.createTag(null));
+            final Path temporary = Files.createTempFile(dimensionDir, "level", ".dat");
+            NbtIo.writeCompressed(root, temporary);
+            final Path current = dimensionDir.resolve("level.dat");
+            if (Files.exists(current)) {
+                Files.copy(current, dimensionDir.resolve("level.dat_old"), StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.move(temporary, current, StandardCopyOption.REPLACE_EXISTING);
+        } catch (final IOException e) {
+            SpongeCommon.logger().error("Failed to save the level data of world '{}' to {}", key, dimensionDir, e);
+        }
     }
 
     @Override
@@ -490,6 +522,10 @@ public class SpongeWorldManager implements WorldManager {
                                 if (fileName.equals(Constants.World.LEVEL_DAT_OLD)) {
                                     return FileVisitResult.CONTINUE;
                                 }
+                                // The world's Sponge identity (its key and UUID): the copy gets its own when it first loads
+                                if (originalDirectory.relativize(file).equals(Path.of("data", "sponge", "registry.dat"))) {
+                                    return FileVisitResult.CONTINUE;
+                                }
                                 Files.copy(file, copyDirectory.resolve(originalDirectory.relativize(file)), StandardCopyOption.COPY_ATTRIBUTES,
                                     StandardCopyOption.REPLACE_EXISTING);
 
@@ -516,16 +552,19 @@ public class SpongeWorldManager implements WorldManager {
                         throw new CompletionException(e);
                     }
 
-                    final Optional<LevelDataLoadResult> levelData = this.loadLevelData(copyRegistryKey, null);
-                    if (levelData.isPresent()) {
-                        this.saveLevelDat(levelData.get().data(), copyKey);
-                    }
                 }).thenApplyAsync($ -> {
                     if (loadedWorld != null) {
                         loadedWorld.noSave = disableLevelSaving;
                     }
 
-                    return true;
+                    // Give the copy the source's dimension in the saved world gen settings, then its own level.dat.
+                    // Without the dimension its level data couldn't be read ("no valid WorldArchetype"), so the copy
+                    // could never be loaded and wasn't known after a restart.
+                    final net.minecraft.resources.ResourceKey<LevelStem> copyStemKey = Registries.levelToLevelStem(copyRegistryKey);
+                    this.savedLevelStem(registryKey).ifPresent(stem -> this.updateSavedDimensions(dims -> dims.putIfAbsent(copyStemKey, stem)));
+                    final Optional<LevelDataLoadResult> levelData = this.loadLevelData(copyRegistryKey, null);
+                    levelData.ifPresent(result -> this.saveLevelDat(result.data(), copyKey));
+                    return levelData.isPresent();
                 }, SpongeCommon.server());
             })
         );
@@ -584,13 +623,22 @@ public class SpongeWorldManager implements WorldManager {
                 throw new CompletionException(e);
             }
 
-            final Optional<LevelDataLoadResult> levelData = this.loadLevelData(movedRegistryKey, null);
-            if (levelData.isPresent()) {
-                this.saveLevelDat(levelData.get().data(), movedKey);
-            }
-
             return true;
-        });
+        }).thenApplyAsync(moved -> {
+            // Move its entry in the saved world gen settings first: its level data can't be read without a dimension
+            // ("no valid WorldArchetype"), and otherwise it's created again, empty, under the old key at the next start
+            final net.minecraft.resources.ResourceKey<LevelStem> oldStemKey = Registries.levelToLevelStem(SpongeWorldManager.createRegistryKey(key));
+            final net.minecraft.resources.ResourceKey<LevelStem> newStemKey = Registries.levelToLevelStem(movedRegistryKey);
+            this.updateSavedDimensions(dims -> {
+                final @Nullable LevelStem stem = dims.remove(oldStemKey);
+                if (stem != null) {
+                    dims.put(newStemKey, stem);
+                }
+            });
+            final Optional<LevelDataLoadResult> levelData = this.loadLevelData(movedRegistryKey, null);
+            levelData.ifPresent(result -> this.saveLevelDat(result.data(), movedKey));
+            return moved;
+        }, SpongeCommon.server());
     }
 
     @Override
@@ -657,6 +705,8 @@ public class SpongeWorldManager implements WorldManager {
             if (levelStemRegistry.containsKey(levelStemKey)) {
                 ((MappedRegistryBridge<LevelStem>) levelStemRegistry).bridge$forceRemoveValue(Registries.levelToLevelStem(registryKey));
             }
+            // Otherwise the saved world gen settings still list it and it's created again, empty, at the next start
+            this.updateSavedDimensions(dims -> dims.remove(levelStemKey));
 
             final LevelStorageSource.LevelStorageAccess storageSource = ((MinecraftServerAccessor) this.server).accessor$storageSource();
             final PrimaryLevelData levelData = (PrimaryLevelData) this.server.getWorldData();
@@ -891,7 +941,35 @@ public class SpongeWorldManager implements WorldManager {
         final net.minecraft.resources.ResourceKey<Level> registryKey,
         final ServerWorldProperties.LoadOptions.@Nullable LoadOperation loadOperation
     ) {
-        return Optional.ofNullable(this.loadLevelTag(registryKey)).map(t -> this.readLevelData(storageSource, registryKey, t, loadOperation));
+        final Optional<LevelDataLoadResult> loaded;
+        try {
+            loaded = Optional.ofNullable(this.loadLevelTag(registryKey)).map(t -> this.readLevelData(storageSource, registryKey, t, loadOperation));
+        } catch (final RuntimeException e) {
+            // Otherwise it's only seen by whoever handles the load's future (often nobody)
+            SpongeCommon.logger().error("Failed to read the level data of world '{}'", registryKey.identifier(), e);
+            throw e;
+        }
+        if (loaded.isPresent() || Level.OVERWORLD.equals(registryKey)) {
+            return loaded;
+        }
+        // A world saved before Sponge worlds had their own level.dat: rebuild its level data from its saved dimension,
+        // as startup does. Without this, loading an unloaded world did nothing.
+        return this.savedLevelStem(registryKey)
+            .map(stem -> this.createLevelData(registryKey, WorldArchetype.of((WorldArchetypeType) (Object) stem)));
+    }
+
+    /**
+     * The world's dimension: from the level stem registry, else from the saved world gen settings.
+     */
+    private Optional<LevelStem> savedLevelStem(final net.minecraft.resources.ResourceKey<Level> registryKey) {
+        final net.minecraft.resources.ResourceKey<LevelStem> stemKey = Registries.levelToLevelStem(registryKey);
+        final Optional<LevelStem> registered = this.server.registryAccess().lookupOrThrow(Registries.LEVEL_STEM).getOptional(stemKey);
+        if (registered.isPresent()) {
+            return registered;
+        }
+        final @Nullable WorldGenSettings saved = this.server.getDataStorage().get(WorldGenSettings.TYPE);
+        final WorldGenSettings settings = saved != null ? saved : this.server.getWorldGenSettings();
+        return Optional.ofNullable(settings.dimensions().dimensions().get(stemKey));
     }
 
     private LevelDataLoadResult initializeLevelData(final ResourceKey key, final PrimaryLevelData data, final LevelStem stem) {
@@ -951,17 +1029,22 @@ public class SpongeWorldManager implements WorldManager {
         final RegistryAccess.Frozen access = this.server.registryAccess();
         final LevelDataAndDimensions levelData = LevelStorageSource.getLevelDataAndDimensions(worldAccess,
             fixedDataTag, defaultLevelData.getDataConfiguration(), access.lookupOrThrow(Registries.LEVEL_STEM), access);
-        final WorldArchetype worldArchetype = SpongeWorldManager.resolveWorldArchetype(levelData, registryKey, loadOperation);
+        final WorldArchetype worldArchetype = SpongeWorldManager.resolveWorldArchetype(levelData, registryKey, loadOperation, this.savedLevelStem(registryKey));
         final LevelStem levelStem = (LevelStem) (Object) worldArchetype.type();
         final PrimaryLevelData worldData = (PrimaryLevelData) levelData.worldDataAndGenSettings().data();
         worldArchetype.generationConfig().ifPresent(o ->
             ((PrimaryLevelDataBridge) worldData).bridge$spongeData().setWorldOptions((WorldOptions) o));
         ((PrimaryLevelDataAccessor) worldData).accessor$specialWorldProperty(SpongeWorldManager.specialWorldProperty(levelStem));
-        return this.initializeLevelData((ResourceKey) (Object) registryKey.identifier(), worldData, levelStem);
+        final LevelDataLoadResult result = this.initializeLevelData((ResourceKey) (Object) registryKey.identifier(), worldData, levelStem);
+        // The difficulty saved in the world's level.dat is its own: mark it custom, or forceDifficulty() replaces it with
+        // server.properties' when the world loads
+        ((PrimaryLevelDataBridge) worldData).bridge$forceSetDifficulty(worldData.getDifficulty());
+        return result;
     }
 
     private static WorldArchetype resolveWorldArchetype(final LevelDataAndDimensions levelData, final net.minecraft.resources.ResourceKey<Level> registryKey,
-                                                        final ServerWorldProperties.LoadOptions.@Nullable LoadOperation loadOperation) {
+                                                        final ServerWorldProperties.LoadOptions.@Nullable LoadOperation loadOperation,
+                                                        final Optional<LevelStem> knownStem) {
         if (loadOperation != null && loadOperation.overrideWorldArchetype().isPresent()) {
             return loadOperation.overrideWorldArchetype().get();
         }
@@ -979,6 +1062,12 @@ public class SpongeWorldManager implements WorldManager {
         final Optional<LevelStem> worldKeyStem = levelData.dimensions().dimensions().getOptional(Registries.levelToLevelStem(registryKey));
         if (worldKeyStem.isPresent()) {
             return WorldArchetype.of((WorldArchetypeType) (Object) worldKeyStem.get());
+        }
+
+        // The dimensions read above come from world_gen_settings.dat on disk, which only gets a world created this
+        // session at the next save: use the dimension the server knows about now
+        if (knownStem.isPresent()) {
+            return WorldArchetype.of((WorldArchetypeType) (Object) knownStem.get());
         }
 
         if (loadOperation != null && loadOperation.fallbackWorldArchetype().isPresent()) {
@@ -1014,6 +1103,22 @@ public class SpongeWorldManager implements WorldManager {
         );
     }
 
+    /**
+     * Changes the dimensions saved in the server's world gen settings, which decide the worlds loaded at startup.
+     * Reads the saved settings, not MinecraftServer#getWorldGenSettings: that is what the server read at startup, so
+     * each world created afterwards replaced the previous one in the saved list and only the last survived a restart.
+     * Must run on the server thread.
+     */
+    private void updateSavedDimensions(final java.util.function.Consumer<Map<net.minecraft.resources.ResourceKey<LevelStem>, LevelStem>> change) {
+        final @Nullable WorldGenSettings saved = this.server.getDataStorage().get(WorldGenSettings.TYPE);
+        final WorldGenSettings current = saved != null ? saved : this.server.getWorldGenSettings();
+        final Map<net.minecraft.resources.ResourceKey<LevelStem>, LevelStem> dims = new HashMap<>(current.dimensions().dimensions());
+        change.accept(dims);
+        if (!dims.equals(current.dimensions().dimensions())) {
+            this.server.getDataStorage().set(WorldGenSettings.TYPE, new WorldGenSettings(current.options(), new WorldDimensions(dims)));
+        }
+    }
+
     private ServerLevel createLevel(
         final net.minecraft.resources.ResourceKey<Level> registryKey,
         final LevelStem levelStem,
@@ -1030,7 +1135,13 @@ public class SpongeWorldManager implements WorldManager {
         // (Holder.direct), the login packet encoder fails because STREAM_CODEC expects a registry ID.
         // The registry uses IdentityHashMap so wrapAsHolder() won't match deserialized instances.
         // Instead, iterate the registry and match by record equals().
-        final LevelStem resolvedStem = SpongeWorldManager.resolveInlineDimensionType(levelStem, dimensionTypes);
+        LevelStem resolvedStem = SpongeWorldManager.resolveInlineDimensionType(levelStem, dimensionTypes);
+        // A world created or loaded with its own seed: vanilla's levels all use the server's seed, so on 26.x every
+        // Sponge world generated the main world's terrain whatever seed it was given
+        final WorldOptions worldOptions = ((PrimaryLevelDataBridge) levelData).bridge$spongeData().worldGenOptions();
+        if (worldOptions != null && worldOptions.seed() != this.server.getWorldGenSettings().options().seed()) {
+            resolvedStem = PlatformHooks.INSTANCE.getWorldHooks().withSeed(resolvedStem, worldOptions.seed());
+        }
 
         MinecraftServerAccessor.accessor$LOGGER().info("Loading world '{}'", worldKey);
 
@@ -1055,13 +1166,9 @@ public class SpongeWorldManager implements WorldManager {
         // dimensions survive restart. Using the resolved stem ensures the DimensionType is serialized
         // as a registry reference, not inline, breaking the inline cycle for future loads.
         final net.minecraft.resources.ResourceKey<LevelStem> stemKey = Registries.levelToLevelStem(registryKey);
+        final LevelStem stemToSave = resolvedStem;
+        this.updateSavedDimensions(dims -> dims.putIfAbsent(stemKey, stemToSave));
         final WorldGenSettings currentSettings = this.server.getWorldGenSettings();
-        if (!currentSettings.dimensions().dimensions().containsKey(stemKey)) {
-            final Map<net.minecraft.resources.ResourceKey<LevelStem>, LevelStem> mutableDims = new HashMap<>(currentSettings.dimensions().dimensions());
-            mutableDims.put(stemKey, resolvedStem);
-            final WorldGenSettings updated = new WorldGenSettings(currentSettings.options(), new WorldDimensions(mutableDims));
-            this.server.getDataStorage().set(WorldGenSettings.TYPE, updated);
-        }
 
         // Store per-dimension WorldGenSettings in the dimension's own SavedDataStorage.
         // This gives each world its own world_gen_settings.dat with the correct seed/options.

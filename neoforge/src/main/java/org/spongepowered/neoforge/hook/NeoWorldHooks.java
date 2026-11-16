@@ -24,6 +24,8 @@
  */
 package org.spongepowered.neoforge.hook;
 
+import java.util.OptionalLong;
+import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -55,6 +57,16 @@ public class NeoWorldHooks implements WorldHooks {
     @Override
     public boolean isRestoringBlocks(final Level world) {
         return world.restoringBlockSnapshots;
+    }
+
+    @Override
+    public LevelStem withSeed(final LevelStem stem, final long seed) {
+        // NeoForge's seed_override drives ServerLevel#getSeed (and so terrain), structures, the dragon fight and biome
+        // zoom, and is saved with the dimension. Keep one a datapack or mod already set.
+        if (stem.seedOverride().isPresent()) {
+            return stem;
+        }
+        return new LevelStem(stem.type(), stem.generator(), OptionalLong.of(seed));
     }
 
     @Override
