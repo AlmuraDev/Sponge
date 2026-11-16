@@ -136,6 +136,12 @@ public final class SpongeParameterTranslator {
             final Iterator<String> aliasIterator = flag.aliases().iterator();
             final LiteralArgumentBuilder<CommandSourceStack> flagLiteral = LiteralArgumentBuilder.literal(aliasIterator.next());
             flagLiteral.requires((Predicate) flag.requirement());
+            if (!flag.associatedParameter().isPresent() && node.getCommand() != null) {
+                // A flag with no value redirects back to the command so more arguments can follow, but a node that only
+                // redirects can't end the input: "/back -f" was "Unknown or incomplete command". When the command can run
+                // with no further arguments, the flag can end it too.
+                flagLiteral.executes(node.getCommand());
+            }
             final Collection<? extends CommandNode<CommandSourceStack>> toBeRedirected;
             final SpongeFlagLiteralCommandNode flagNode = new SpongeFlagLiteralCommandNode(flagLiteral, flag);
             if (flag.associatedParameter().isPresent()) {
