@@ -31,4 +31,9 @@ public interface NaturalSpawner_SpawnStateBridge {
 
     boolean bridge$canSpawnForCategoryInWorld(MobCategory category, ServerLevel level);
 
+    /**
+     * Remembers the world this state was created for, so the world-wide category check can use that world's spawn limits.
+     */
+    void bridge$setLevel(ServerLevel level);
+
 }

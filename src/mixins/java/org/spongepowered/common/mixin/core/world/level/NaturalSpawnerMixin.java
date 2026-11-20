@@ -30,15 +30,24 @@ import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.LocalMobCapCalculator;
 import net.minecraft.world.level.NaturalSpawner;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.common.bridge.world.level.NaturalSpawner_SpawnStateBridge;
 import org.spongepowered.common.config.SpongeGameConfigs;
 import org.spongepowered.common.config.inheritable.SpawnerCategory;
 
 @Mixin(NaturalSpawner.class)
 public abstract class NaturalSpawnerMixin {
+
+    @Inject(method = "createState", at = @At("RETURN"))
+    private static void impl$rememberLevel(final int spawnableChunkCount, final ServerLevel level, final NaturalSpawner.ChunkGetter chunkGetter,
+                                           final LocalMobCapCalculator mobCapCalculator, final CallbackInfoReturnable<NaturalSpawner.SpawnState> cir) {
+        ((NaturalSpawner_SpawnStateBridge) cir.getReturnValue()).bridge$setLevel(level);
+    }
 
     @WrapOperation(method = "spawnForChunk", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/NaturalSpawner$SpawnState;canSpawnForCategoryLocal(Lnet/minecraft/world/entity/MobCategory;Lnet/minecraft/world/level/ChunkPos;)Z"))
     private static boolean impl$spawnTickRate(final NaturalSpawner.SpawnState state, final MobCategory category, final ChunkPos pos,

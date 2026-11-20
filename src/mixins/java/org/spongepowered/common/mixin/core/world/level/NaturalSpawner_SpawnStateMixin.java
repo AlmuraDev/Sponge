@@ -28,9 +28,13 @@ import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.NaturalSpawner;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.common.accessor.world.level.NaturalSpawnerAccessor;
 import org.spongepowered.common.bridge.world.level.NaturalSpawner_SpawnStateBridge;
 import org.spongepowered.common.config.SpongeGameConfigs;
@@ -43,6 +47,31 @@ public abstract class NaturalSpawner_SpawnStateMixin implements NaturalSpawner_S
     @Shadow @Final private int spawnableChunkCount;
     @Shadow @Final private Object2IntOpenHashMap<MobCategory> mobCategoryCounts;
     // @formatter:on
+
+    private @Nullable ServerLevel impl$level;
+
+    @Override
+    public void bridge$setLevel(final ServerLevel level) {
+        this.impl$level = level;
+    }
+
+    /**
+     * Since 26.x the categories are first filtered world-wide (getFilteredSpawningCategories) before the per-chunk check Sponge
+     * already replaces. Without this the world-wide filter keeps vanilla's caps, so spawn limits above vanilla had no effect.
+     * Categories Sponge has no limit for (e.g. axolotls), or a state without a world, keep vanilla's check.
+     */
+    @Inject(method = "canSpawnForCategoryGlobal", at = @At("HEAD"), cancellable = true)
+    private void impl$useWorldSpawnLimits(final MobCategory category, final CallbackInfoReturnable<Boolean> cir) {
+        if (this.impl$level == null) {
+            return;
+        }
+        switch (category) {
+            case MONSTER, CREATURE, AMBIENT, UNDERGROUND_WATER_CREATURE, WATER_CREATURE, WATER_AMBIENT ->
+                cir.setReturnValue(this.bridge$canSpawnForCategoryInWorld(category, this.impl$level));
+            default -> {
+            }
+        }
+    }
 
     @Override
     public boolean bridge$canSpawnForCategoryInWorld(final MobCategory category, final ServerLevel level) {
