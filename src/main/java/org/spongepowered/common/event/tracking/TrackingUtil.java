@@ -73,6 +73,7 @@ import org.spongepowered.common.util.VecHelper;
 import org.spongepowered.common.world.BlockChange;
 import org.spongepowered.common.world.server.SpongeLocatableBlockBuilder;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -153,12 +154,19 @@ public final class TrackingUtil {
             tick.run();
 
             // If we know the viewers force broadcast now to associate the inventory change with its blockentity
-            // otherwise the viewing players update this during their ticking
-            if (blockEntity instanceof ViewableInventoryBridge vib) {
-                final Set<ServerPlayer> players = vib.viewableBridge$getViewers();
-                if (!players.isEmpty()) {
-                    players.forEach(player -> player.containerMenu.broadcastChanges());
+            // otherwise the viewing players update this during their ticking (and their next packet logs the change as a
+            // slot transaction without an event). That covers the ticking block entity and every other viewed container it
+            // changed, e.g. a hopper or a mod's pipe emptying an open chest.
+            final Set<ViewableInventoryBridge> changed = context.changedViewables();
+            if (blockEntity instanceof ViewableInventoryBridge vib && vib.viewableBridge$hasViewers() || !changed.isEmpty()) {
+                final Set<ServerPlayer> players = new HashSet<>();
+                if (blockEntity instanceof ViewableInventoryBridge vib) {
+                    players.addAll(vib.viewableBridge$getViewers());
                 }
+                for (final ViewableInventoryBridge viewable : changed) {
+                    players.addAll(viewable.viewableBridge$getViewers());
+                }
+                players.forEach(player -> player.containerMenu.broadcastChanges());
             }
 
         } catch (final Exception e) {

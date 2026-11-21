@@ -24,13 +24,44 @@
  */
 package org.spongepowered.common.event.tracking.phase.tick;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.spongepowered.common.bridge.TrackableBridge;
+import org.spongepowered.common.bridge.world.inventory.ViewableInventoryBridge;
 import org.spongepowered.common.event.tracking.IPhaseState;
 import org.spongepowered.common.event.tracking.PhaseTracker;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+
 public class TileEntityTickContext extends LocationBasedTickContext<TileEntityTickContext> {
+
+    // Other viewed containers the ticking block entity changed (e.g. a pipe or hopper emptying an open chest)
+    private @Nullable Set<ViewableInventoryBridge> changedViewables;
+
     public TileEntityTickContext(final IPhaseState<TileEntityTickContext> phaseState, final PhaseTracker tracker) {
         super(phaseState, tracker);
+    }
+
+    /**
+     * Remembers a viewed container changed during this tick, so its viewers are synchronized before the tick ends and the change
+     * is attributed to this block entity instead of to a viewer's next packet.
+     */
+    public void markViewableChanged(final ViewableInventoryBridge viewable) {
+        if (this.changedViewables == null) {
+            this.changedViewables = new HashSet<>();
+        }
+        this.changedViewables.add(viewable);
+    }
+
+    public Set<ViewableInventoryBridge> changedViewables() {
+        return this.changedViewables == null ? Collections.emptySet() : this.changedViewables;
+    }
+
+    @Override
+    protected void reset() {
+        super.reset();
+        this.changedViewables = null;
     }
 
     @Override

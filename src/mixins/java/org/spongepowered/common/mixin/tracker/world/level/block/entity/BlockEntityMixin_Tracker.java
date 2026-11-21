@@ -24,13 +24,20 @@
  */
 package org.spongepowered.common.mixin.tracker.world.level.block.entity;
 
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.common.bridge.DelegatingConfigTrackableBridge;
 import org.spongepowered.common.bridge.TrackableBridge;
+import org.spongepowered.common.bridge.world.inventory.ViewableInventoryBridge;
+import org.spongepowered.common.event.tracking.PhaseTracker;
+import org.spongepowered.common.event.tracking.phase.tick.TileEntityTickContext;
 
 @Mixin(BlockEntity.class)
 public abstract class BlockEntityMixin_Tracker implements DelegatingConfigTrackableBridge {
@@ -42,5 +49,26 @@ public abstract class BlockEntityMixin_Tracker implements DelegatingConfigTracka
     @Override
     public TrackableBridge bridge$trackingConfigDelegate() {
         return (TrackableBridge) this.type;
+    }
+
+    /**
+     * A block entity ticking can change another block entity's container: a hopper or a mod's pipe (through NeoForge's item
+     * transfer) emptying a chest. If players have that container open, it is remembered so TrackingUtil synchronizes their menus
+     * before the tick ends. Otherwise the change is first noticed by a viewer's next packet and logged as a slot transaction
+     * without an event.
+     */
+    @Inject(method = "setChanged()V", at = @At("HEAD"))
+    private void tracker$markChangedForViewers(final CallbackInfo ci) {
+        if (!((Object) this instanceof ViewableInventoryBridge viewable) || !viewable.viewableBridge$hasViewers()
+                || !(((BlockEntity) (Object) this).getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+        final PhaseTracker tracker = PhaseTracker.getWorldInstance(level);
+        if (!tracker.onSidedThread()) {
+            return;
+        }
+        if (tracker.getPhaseContext() instanceof TileEntityTickContext context) {
+            context.markViewableChanged(viewable);
+        }
     }
 }
