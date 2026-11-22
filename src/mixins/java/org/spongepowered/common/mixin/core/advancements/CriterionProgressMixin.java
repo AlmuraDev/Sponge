@@ -44,12 +44,18 @@ public abstract class CriterionProgressMixin implements CriterionProgressBridge,
 
     @Inject(method = "grant", at = @At("RETURN"))
     private void onObtain(CallbackInfo ci) {
-        ((AdvancementProgressBridge) this.impl$advancementProgress).bridge$invalidateAchievedState();
+        // Only set for progress Sponge set up on the server; a client's progress has none
+        if (this.impl$advancementProgress != null) {
+            ((AdvancementProgressBridge) this.impl$advancementProgress).bridge$invalidateAchievedState();
+        }
     }
 
     @Inject(method = "revoke", at = @At("RETURN"))
     private void onReset(CallbackInfo ci) {
-        ((AdvancementProgressBridge) this.impl$advancementProgress).bridge$invalidateAchievedState();
+        // Only set for progress Sponge set up on the server; a client's progress has none
+        if (this.impl$advancementProgress != null) {
+            ((AdvancementProgressBridge) this.impl$advancementProgress).bridge$invalidateAchievedState();
+        }
     }
 
     @Override

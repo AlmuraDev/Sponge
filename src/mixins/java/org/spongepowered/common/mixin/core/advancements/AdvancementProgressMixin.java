@@ -121,9 +121,18 @@ public abstract class AdvancementProgressMixin implements AdvancementProgressBri
         this.impl$advancementKey = key;
     }
 
+    /**
+     * True for progress Sponge set up on the server (it has an advancement key). A client connected to a server builds progress
+     * for the advancements in the packets without one, and onServerThread() is also true there (no server is available), so
+     * the key is what tells the two apart. Progress without a key keeps vanilla behaviour.
+     */
+    private boolean impl$isSpongeTracked() {
+        return this.impl$advancementKey != null && PlatformHooks.INSTANCE.getGeneralHooks().onServerThread();
+    }
+
     @Override
     public void bridge$invalidateAchievedState() {
-        if (!PlatformHooks.INSTANCE.getGeneralHooks().onServerThread()) { // Ignore on the client
+        if (!this.impl$isSpongeTracked()) { // Ignore on the client
             return;
         }
         for (final ImplementationBackedCriterionProgress progress : this.impl$getProgressMap().values()) {
@@ -133,7 +142,7 @@ public abstract class AdvancementProgressMixin implements AdvancementProgressBri
 
     @Override
     public void bridge$updateProgressMap() {
-        if (!PlatformHooks.INSTANCE.getGeneralHooks().onServerThread()) {
+        if (!this.impl$isSpongeTracked()) {
             return;
         }
         final Optional<Advancement> advancement = this.impl$getOptionalAdvancement();
@@ -165,7 +174,7 @@ public abstract class AdvancementProgressMixin implements AdvancementProgressBri
         for (final List<String> reqs : requirements.requirements()) {
             for (final String req : reqs) {
                 if (!criteria.containsKey(req)) { // TODO was parameter is now field, correct?
-                    final String advName = this.impl$getOptionalAdvancement()
+                    final String advName = !this.impl$isSpongeTracked() ? "unknown" : this.impl$getOptionalAdvancement()
                             .map(Objects::toString)
                             .orElse("unknown");
                     throw new IllegalStateException("Found a requirement which does not exist in the criteria, "
@@ -236,7 +245,7 @@ public abstract class AdvancementProgressMixin implements AdvancementProgressBri
      */
     @Inject(method = "grantProgress", at = @At("HEAD"), cancellable = true)
     private void impl$grantScoreCriteriaAndCallEvents(String criterion, CallbackInfoReturnable<Boolean> ci) {
-        if (!PlatformHooks.INSTANCE.getGeneralHooks().onServerThread()) { // Use vanilla behavior on the client
+        if (!this.impl$isSpongeTracked()) { // Use vanilla behavior on the client
             return;
         }
         ci.setReturnValue(this.impl$grantCriterion(criterion));
@@ -291,7 +300,7 @@ public abstract class AdvancementProgressMixin implements AdvancementProgressBri
      */
     @Inject(method = "revokeProgress", at = @At("HEAD"), cancellable = true)
     private void impl$removeScoreCriteriaAndCallEvents(String rawCriterion, CallbackInfoReturnable<Boolean> ci) {
-        if (!PlatformHooks.INSTANCE.getGeneralHooks().onServerThread()) { // Use vanilla behavior on the client
+        if (!this.impl$isSpongeTracked()) { // Use vanilla behavior on the client
             return;
         }
         ci.setReturnValue(this.impl$revokeCriterion(rawCriterion));
