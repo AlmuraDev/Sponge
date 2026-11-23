@@ -329,8 +329,9 @@ interface TransactionSink {
                 return;
             }
             if (phaseContext instanceof EntityTickContext) {
-                // TODO remove warning when we got all cases covered
-                SpongeCommon.logger().warn("Ignoring slot transaction on InventoryMenu during {}. {}\nNo Event will be fired for this", phaseContext.getClass().getSimpleName(), newTransaction);
+                // Items that change themselves while worn or held (e.g. powered armor using energy each tick) land here every
+                // tick. No event is fired for them, so this is only worth seeing when debugging.
+                SpongeCommon.logger().debug("Ignoring slot transaction on InventoryMenu during {}. {}\nNo Event will be fired for this", phaseContext.getClass().getSimpleName(), newTransaction);
                 return;
             }
         }
