@@ -28,6 +28,7 @@ import com.mojang.authlib.GameProfile;
 import net.minecraft.server.players.NameAndId;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.spongepowered.api.Sponge;
+import org.spongepowered.api.profile.ProfileNotFoundException;
 import org.spongepowered.api.service.permission.PermissionService;
 import org.spongepowered.api.service.permission.Subject;
 import org.spongepowered.common.SpongeCommon;
@@ -62,9 +63,26 @@ public class UserCollection extends SpongeSubjectCollection {
         try {
             return SpongeGameProfile.toMcProfile(Sponge.server().gameProfileManager().basicProfile(uuid).get());
         } catch (final Exception e) {
-            SpongeCommon.logger().warn("Failed to lookup game profile for {}", uuid, e);
+            if (UserCollection.isProfileNotFound(e)) {
+                // Expected for players Mojang doesn't know, e.g. every new player of an offline-mode server
+                SpongeCommon.logger().debug("No game profile found for {}, using the UUID without a name", uuid);
+            } else {
+                SpongeCommon.logger().warn("Failed to lookup game profile for {}", uuid, e);
+            }
             return new GameProfile(uuid, "");
         }
+    }
+
+    private static boolean isProfileNotFound(final Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ProfileNotFoundException) {
+                return true;
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return false;
     }
 
     @Override
