@@ -50,9 +50,23 @@ public abstract class SerializableChunkDataMixin_Tracker implements Serializable
     public void bridge$setTrackerData(final LevelChunk chunkAccess) {
         final LevelChunkBridge chunk = (LevelChunkBridge) chunkAccess;
         if (!chunk.bridge$getTrackedShortPlayerPositions().isEmpty() || !chunk.bridge$getTrackedIntPlayerPositions().isEmpty()) {
-            this.tracker$shortPlayerPos = chunk.bridge$getTrackedShortPlayerPositions();
-            this.tracker$intPlayerPos = chunk.bridge$getTrackedIntPlayerPositions();
+            // This runs on the server thread when the save is prepared, but bridge$writeTrackerData runs later on an
+            // IO worker: snapshot the maps (and their trackers, which are mutable) so block changes in the meantime
+            // can't throw ConcurrentModificationException while they are written.
+            this.tracker$shortPlayerPos = SerializableChunkDataMixin_Tracker.tracker$copy(chunk.bridge$getTrackedShortPlayerPositions());
+            this.tracker$intPlayerPos = SerializableChunkDataMixin_Tracker.tracker$copy(chunk.bridge$getTrackedIntPlayerPositions());
         }
+    }
+
+    private static <T> Map<T, PlayerTracker> tracker$copy(final Map<T, PlayerTracker> map) {
+        final Map<T, PlayerTracker> copy = new HashMap<>(map.size());
+        for (final Map.Entry<T, PlayerTracker> entry : map.entrySet()) {
+            final PlayerTracker tracker = new PlayerTracker();
+            tracker.creatorindex = entry.getValue().creatorindex;
+            tracker.notifierIndex = entry.getValue().notifierIndex;
+            copy.put(entry.getKey(), tracker);
+        }
+        return copy;
     }
 
     @SuppressWarnings("deprecation")
