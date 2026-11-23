@@ -79,17 +79,28 @@ public abstract class LevelChunkMixin_Tracker extends ChunkAccessMixin_Tracker i
     // @formatter:on
     private @MonotonicNonNull PhaseContext<@NonNull ?> tracker$postProcessContext = null;
 
+    /**
+     * Sponge sets blocks through its own tracked path, so a direct LevelChunk#setBlockState call on a server world comes from a mod
+     * writing the chunk itself for speed (e.g. WorldEdit's native access, which does lighting, client and neighbor updates itself).
+     * On the server thread that write goes ahead untracked: refusing it dropped the change, and replaying it through the tracked
+     * world turned a large edit into one block event that took longer than the watchdog allows. Such changes fire no block events.
+     * Writes off the server thread are still refused.
+     */
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
     private void tracker$sanityCheckServerWorldSetBlockState(final BlockPos pos, final BlockState state, final int flag,
         final CallbackInfoReturnable<BlockState> cir
     ) {
-        if (!((LevelBridge) this.level).bridge$isFake()) {
-            new PrettyPrinter(80).add("Illegal Direct Chunk Access")
-                .hr()
-                .add(new IllegalAccessException("No one should be accessing Chunk.setBlock in a ServerWorld's environment"))
-                .log(PhaseTracker.LOGGER, Level.WARN);
-            cir.setReturnValue(null);
+        if (((LevelBridge) this.level).bridge$isFake()) {
+            return;
         }
+        if (this.level instanceof ServerLevel serverLevel && PhaseTracker.getWorldInstance(serverLevel).onSidedThread()) {
+            return;
+        }
+        new PrettyPrinter(80).add("Illegal Direct Chunk Access")
+            .hr()
+            .add(new IllegalAccessException("No one should be accessing Chunk.setBlock in a ServerWorld's environment off the server thread"))
+            .log(PhaseTracker.LOGGER, Level.WARN);
+        cir.setReturnValue(null);
     }
 
     /**
