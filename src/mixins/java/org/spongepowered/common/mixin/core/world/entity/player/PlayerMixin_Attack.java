@@ -71,7 +71,10 @@ public abstract class PlayerMixin_Attack extends LivingEntityMixin_Damage implem
     @Shadow @Final public InventoryMenu inventoryMenu;
     //@formatter:on
 
-    private final Deque<SpongeAttackTracker> attack$trackers = new LinkedList<>();
+    // A LinkedList, as it holds null: a cancelled attack pushes null so its pop at RETURN stays balanced
+    private final Deque<@Nullable SpongeAttackTracker> attack$trackers = new LinkedList<>();
+    // True while a sweep target's tracker is pushed, so only that pushed tracker is popped again
+    private boolean attack$sweepTrackerPushed;
 
     @Override
     public final @Nullable SpongeAttackTracker attack$tracker() {
@@ -83,12 +86,14 @@ public abstract class PlayerMixin_Attack extends LivingEntityMixin_Damage implem
     @ModifyExpressionValue(method = "attack", at = @At("MIXINEXTRAS:EXPRESSION"))
     private float attack$firePreEvent(final float damage, @Local(argsOnly = true) final Entity target, @Local final DamageSource source, @Local final ItemStack weapon, final @Cancellable CallbackInfo ci) {
         final SpongeAttackTracker tracker = SpongeAttackTracker.callAttackPreEvent((org.spongepowered.api.entity.Entity) target, source, damage, weapon);
+        // Pushed even when cancelled (as null, read as "no tracker"), because attack$removeTracker pops at every RETURN after
+        // this point, including the one the cancel takes
+        this.attack$trackers.addLast(tracker);
         if (tracker == null) {
             ci.cancel();
             return damage;
         }
 
-        this.attack$trackers.addLast(tracker);
         return tracker.applyStartStep();
     }
 
@@ -213,7 +218,7 @@ public abstract class PlayerMixin_Attack extends LivingEntityMixin_Damage implem
         from = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;getEnchantedDamage(Lnet/minecraft/world/entity/Entity;FLnet/minecraft/world/damagesource/DamageSource;)F", ordinal = 0)
     ))
     private void attack$removeTracker(CallbackInfo ci) {
-        this.attack$trackers.removeLast();
+        this.attack$trackers.pollLast();
     }
 
     @WrapOperation(method = {
@@ -248,6 +253,7 @@ public abstract class PlayerMixin_Attack extends LivingEntityMixin_Damage implem
         }
 
         this.attack$trackers.addLast(sweepTracker);
+        this.attack$sweepTrackerPushed = true;
         damage = sweepTracker.applyStartStep();
 
         // In vanilla, this step is outside the loop, but we move it to here so it can be modified per target
@@ -268,7 +274,7 @@ public abstract class PlayerMixin_Attack extends LivingEntityMixin_Damage implem
         damage = (float) step.applyChildrenAfter(damage);
 
         if (sweepTracker.callAttackPostEvent((org.spongepowered.api.entity.Entity) sweepTarget, source, damage, 0.4F)) {
-            this.attack$trackers.removeLast();
+            this.attack$popSweepTracker();
             return Double.MAX_VALUE;
         }
 
@@ -298,7 +304,7 @@ public abstract class PlayerMixin_Attack extends LivingEntityMixin_Damage implem
     )
     private void sweepAttack$knockbackModifier(
         final LivingEntity sweepTarget, double modifier, final double dirX, final double dirZ, final DamageSource source, final float damage, final Operation<Void> operation) {
-        final SpongeAttackTracker sweepTracker = this.attack$tracker();
+        final SpongeAttackTracker sweepTracker = this.attack$sweepTrackerPushed ? this.attack$tracker() : null;
         if (sweepTracker != null) {
             modifier = sweepTracker.postEvent().knockbackModifier();
         }
@@ -320,13 +326,21 @@ public abstract class PlayerMixin_Attack extends LivingEntityMixin_Damage implem
     private boolean sweepAttack$finalDamage(
         final LivingEntity sweepTarget, final ServerLevel level, final DamageSource source, float damage,
         final Operation<Boolean> operation) {
-        final SpongeAttackTracker sweepTracker = this.attack$tracker();
+        // Only a target whose sweep tracker was pushed has one on top; otherwise the top is the main attack's tracker
+        final SpongeAttackTracker sweepTracker = this.attack$sweepTrackerPushed ? this.attack$tracker() : null;
         if (sweepTracker != null) {
             damage = (float) sweepTracker.postEvent().finalDamage();
         }
         final var result = operation.call(sweepTarget, level, source, damage);
-        this.attack$trackers.removeLast();
+        this.attack$popSweepTracker();
         return result;
+    }
+
+    private void attack$popSweepTracker() {
+        if (this.attack$sweepTrackerPushed) {
+            this.attack$sweepTrackerPushed = false;
+            this.attack$trackers.pollLast();
+        }
     }
 
     @Inject(method = "itemAttackInteraction", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;setItemInHand(Lnet/minecraft/world/InteractionHand;Lnet/minecraft/world/item/ItemStack;)V", shift = At.Shift.AFTER))
